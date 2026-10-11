@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// One borderless window per screen, just above the desktop icons (so they're covered) and below
-/// every app window. Clicks pass straight through, and it stays put on every Space.
+/// One borderless window per screen, above the desktop icons and widgets (so they're covered) and
+/// just below every app window. Clicks pass straight through, and it stays put on every Space.
 @MainActor
 final class Wallpaper {
     private unowned let studio: Studio
@@ -47,7 +47,7 @@ final class Wallpaper {
 
     private func makeWindow(for screen: NSScreen) -> NSWindow {
         let window = NSWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
-        window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 1)
+        window.level = NSWindow.Level(rawValue: NSWindow.Level.normal.rawValue - 1)
         window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
         window.ignoresMouseEvents = true
         window.isReleasedWhenClosed = false
@@ -78,7 +78,7 @@ struct WallpaperView: View {
     }
 }
 
-/// Sets the real desktop picture to a still of a palette, on every screen.
+/// Sets the real desktop picture to a still of a palette, on every screen and every Space.
 @MainActor
 enum DesktopPicture {
     private static let fill: [NSWorkspace.DesktopImageOptionKey: Any] = [
@@ -96,6 +96,71 @@ enum DesktopPicture {
                   workspace.desktopImageURL(for: screen)?.standardizedFileURL != still.standardizedFileURL else { continue }
             try? workspace.setDesktopImageURL(still, for: screen, options: fill)
         }
+        syncAllSpaces(palette.id)
+    }
+
+    // NSWorkspace only changes the current Space. Once macOS has saved that, copy the same entry to
+    // every other Space in its wallpaper store and restart WallpaperAgent so it reloads.
+    private static var store: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/com.apple.wallpaper/Store/Index.plist")
+    }
+
+    private static func syncAllSpaces(_ paletteID: String, attempt: Int = 0) {
+        guard let data = try? Data(contentsOf: store),
+              var root = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any],
+              let displays = root["Displays"] as? [String: Any],
+              var spaces = root["Spaces"] as? [String: Any] else { return }
+
+        var content: [String: Any] = [:]
+        for (id, value) in displays {
+            if let c = ((value as? [String: Any])?["Desktop"] as? [String: Any])?["Content"] { content[id] = c }
+        }
+        guard let main = content.values.first, content.values.allSatisfy({ shows($0, paletteID) }) else {
+            if attempt < 10 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { syncAllSpaces(paletteID, attempt: attempt + 1) }
+            }
+            return
+        }
+
+        var changed = false
+        func replace(_ node: inout [String: Any], with new: Any) {
+            guard var desktop = node["Desktop"] as? [String: Any],
+                  !((desktop["Content"] as? NSDictionary)?.isEqual(new) ?? false) else { return }
+            desktop["Content"] = new
+            node["Desktop"] = desktop
+            changed = true
+        }
+        for (spaceID, value) in spaces {
+            guard var space = value as? [String: Any] else { continue }
+            if var fallback = space["Default"] as? [String: Any] {
+                replace(&fallback, with: main)
+                space["Default"] = fallback
+            }
+            if var perDisplay = space["Displays"] as? [String: Any] {
+                for (id, value) in perDisplay {
+                    guard var node = value as? [String: Any], let new = content[id] else { continue }
+                    replace(&node, with: new)
+                    perDisplay[id] = node
+                }
+                space["Displays"] = perDisplay
+            }
+            spaces[spaceID] = space
+        }
+        guard changed else { return }
+        root["Spaces"] = spaces
+        guard let out = try? PropertyListSerialization.data(fromPropertyList: root, format: .binary, options: 0),
+              (try? out.write(to: store, options: .atomic)) != nil else { return }
+        let restart = Process()
+        restart.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
+        restart.arguments = ["WallpaperAgent"]
+        try? restart.run()
+    }
+
+    private static func shows(_ content: Any, _ paletteID: String) -> Bool {
+        guard let choice = ((content as? [String: Any])?["Choices"] as? [[String: Any]])?.first,
+              let config = choice["Configuration"] as? Data else { return false }
+        return String(decoding: config, as: UTF8.self).contains("Backdrop/\(paletteID)-")
     }
 
     private static func still(of palette: Palette, size: CGSize) -> URL? {
