@@ -9,7 +9,19 @@ A menu bar app for macOS that turns your desktop into a slow, blurred gradient f
 
 ## Install
 
-Needs macOS 14+ and the Xcode command line tools.
+Needs macOS 14+.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/joshuaramkissoon/backdrop/master/install.sh | sh
+```
+
+This downloads the latest signed, notarized release into `/Applications` and opens it. Look for the half-filled circle in the menu bar. Run it again to update.
+
+Or [download Backdrop.zip](https://github.com/joshuaramkissoon/backdrop/releases/latest/download/Backdrop.zip), unzip it and drag Backdrop to Applications.
+
+<details><summary>Build it yourself</summary>
+
+Needs the Xcode command line tools.
 
 ```sh
 git clone https://github.com/joshuaramkissoon/backdrop.git
@@ -17,4 +29,5 @@ cd backdrop
 ./build.sh
 ```
 
-This builds the app, installs it in `/Applications` and opens it. Look for the half-filled circle in the menu bar.
+This builds the app, installs it in `/Applications` and opens it.
+</details>
