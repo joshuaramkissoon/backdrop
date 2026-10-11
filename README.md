@@ -4,6 +4,7 @@ A menu bar app for macOS that turns your desktop into a slow, blurred gradient f
 
 - 8 palettes with live previews, or Cycle to drift between the light ones
 - Motion speed, film grain (stops banding once the video is compressed), hide the Dock while on
+- Your desktop picture follows the palette while it's on, so the menu bar's tint and text match, then yours comes back
 - One click to hide every app except the one you're recording, and bring them all back after
 
 ## Install

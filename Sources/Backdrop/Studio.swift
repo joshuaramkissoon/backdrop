@@ -12,7 +12,7 @@ final class Studio: ObservableObject {
         didSet {
             wallpaper.setVisible(isOn)
             applyDock()
-            if !isOn { stage.restore() }
+            if isOn { DesktopPicture.apply(Palette.find(shown)) } else { DesktopPicture.restore(); stage.restore() }
         }
     }
     @Published var paletteID: String { didSet { defaults.set(paletteID, forKey: "palette"); if !cycle { shown = paletteID } } }
@@ -27,7 +27,7 @@ final class Studio: ObservableObject {
         }
     }
     /// The palette on screen right now (differs from `paletteID` while cycling).
-    @Published private(set) var shown: String
+    @Published private(set) var shown: String { didSet { if isOn { DesktopPicture.apply(Palette.find(shown)) } } }
 
     let stage = Stage()
     private lazy var wallpaper = Wallpaper(studio: self)
@@ -43,6 +43,7 @@ final class Studio: ObservableObject {
         openAtLogin = SMAppService.mainApp.status == .enabled
         shown = defaults.string(forKey: "palette") ?? "plum"
         Dock.restoreIfLeftHidden()
+        DesktopPicture.restore()
         restartCycle()
     }
 
