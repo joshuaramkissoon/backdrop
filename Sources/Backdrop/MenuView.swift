@@ -24,7 +24,7 @@ struct MenuView: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Backdrop").font(.system(size: 15, weight: .semibold))
-                Text(studio.isOn ? "Your desktop is covered" : "Off")
+                Text(studio.isOn ? "Moving, over your desktop" : studio.useAsWallpaper ? "Still, as your wallpaper" : "Off")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
@@ -68,6 +68,7 @@ struct MenuView: View {
                 Image(systemName: "hare.fill").foregroundStyle(.tertiary)
             }
             row("Film grain", $studio.grain)
+            row("Use as wallpaper", $studio.useAsWallpaper)
             row("Hide the Dock while on", $studio.hideDock)
             row("Open at login", $studio.openAtLogin)
         }

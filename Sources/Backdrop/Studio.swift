@@ -2,7 +2,7 @@ import AppKit
 import ServiceManagement
 import SwiftUI
 
-/// All of the app's state. Settings persist; the backdrop itself always starts off.
+/// All of the app's state. Everything persists per Mac, including whether the moving backdrop is on.
 @MainActor
 final class Studio: ObservableObject {
     static let shared = Studio()
@@ -10,15 +10,21 @@ final class Studio: ObservableObject {
 
     @Published var isOn = false {
         didSet {
+            defaults.set(isOn, forKey: "isOn")
             wallpaper.setVisible(isOn)
             applyDock()
-            if isOn { DesktopPicture.apply(Palette.find(shown)) } else { DesktopPicture.restore(); stage.restore() }
+            if !isOn { stage.restore() }
         }
     }
     @Published var paletteID: String { didSet { defaults.set(paletteID, forKey: "palette"); if !cycle { shown = paletteID } } }
     @Published var cycle: Bool { didSet { defaults.set(cycle, forKey: "cycle"); restartCycle() } }
     @Published var motion: Double { didSet { defaults.set(motion, forKey: "motion") } }
     @Published var grain: Bool { didSet { defaults.set(grain, forKey: "grain") } }
+    /// Keep the real desktop picture set to a still of the palette, so the menu bar, lock screen
+    /// and Mission Control match it. Turning it off just stops the app touching your wallpaper.
+    @Published var useAsWallpaper: Bool {
+        didSet { defaults.set(useAsWallpaper, forKey: "useAsWallpaper"); applyWallpaper() }
+    }
     @Published var hideDock: Bool { didSet { defaults.set(hideDock, forKey: "hideDock"); applyDock() } }
     @Published var openAtLogin: Bool {
         didSet {
@@ -27,24 +33,32 @@ final class Studio: ObservableObject {
         }
     }
     /// The palette on screen right now (differs from `paletteID` while cycling).
-    @Published private(set) var shown: String { didSet { if isOn { DesktopPicture.apply(Palette.find(shown)) } } }
+    @Published private(set) var shown: String { didSet { applyWallpaper() } }
 
     let stage = Stage()
     private lazy var wallpaper = Wallpaper(studio: self)
     private var cycleTimer: Timer?
 
     private init() {
-        defaults.register(defaults: ["palette": "plum", "cycle": false, "motion": 1.0, "grain": true, "hideDock": true])
+        defaults.register(defaults: ["palette": "plum", "cycle": false, "motion": 1.0, "grain": true, "hideDock": true, "useAsWallpaper": true, "isOn": false])
         paletteID = defaults.string(forKey: "palette") ?? "plum"
         cycle = defaults.bool(forKey: "cycle")
         motion = defaults.double(forKey: "motion")
         grain = defaults.bool(forKey: "grain")
         hideDock = defaults.bool(forKey: "hideDock")
+        useAsWallpaper = defaults.bool(forKey: "useAsWallpaper")
         openAtLogin = SMAppService.mainApp.status == .enabled
         shown = defaults.string(forKey: "palette") ?? "plum"
-        Dock.restoreIfLeftHidden()
-        DesktopPicture.restore()
         restartCycle()
+        applyWallpaper()
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { _ in MainActor.assumeIsolated { self.applyWallpaper() } }
+        if defaults.bool(forKey: "isOn") {
+            DispatchQueue.main.async { self.isOn = true }
+        } else {
+            Dock.restoreIfLeftHidden()
+        }
     }
 
     func choose(_ palette: Palette) {
@@ -53,9 +67,14 @@ final class Studio: ObservableObject {
         shown = palette.id
     }
 
+    /// On quit: give back the Dock and hidden apps, but remember the switch for next launch.
     func shutdown() {
-        isOn = false
         Dock.restore()
+        stage.restore()
+    }
+
+    private func applyWallpaper() {
+        if useAsWallpaper { DesktopPicture.apply(Palette.find(shown)) }
     }
 
     private func applyDock() {

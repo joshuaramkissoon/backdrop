@@ -78,13 +78,9 @@ struct WallpaperView: View {
     }
 }
 
-/// While the backdrop is on, the real desktop picture becomes a still of the current palette, so the
-/// menu bar's tint and text (and Mission Control) match it. Yours comes back when it's switched off.
-/// macOS only changes the picture on the current Space, so anything that isn't ours is left alone.
+/// Sets the real desktop picture to a still of a palette, on every screen.
 @MainActor
 enum DesktopPicture {
-    private static let savedKey = "desktopPicturesBefore"
-    private static var savedOptions: [String: [NSWorkspace.DesktopImageOptionKey: Any]] = [:]
     private static let fill: [NSWorkspace.DesktopImageOptionKey: Any] = [
         .imageScaling: NSImageScaling.scaleProportionallyUpOrDown.rawValue, .allowClipping: true,
     ]
@@ -95,38 +91,12 @@ enum DesktopPicture {
 
     static func apply(_ palette: Palette) {
         let workspace = NSWorkspace.shared
-        var saved = UserDefaults.standard.dictionary(forKey: savedKey) as? [String: String] ?? [:]
         for screen in NSScreen.screens {
-            guard let current = workspace.desktopImageURL(for: screen) else { continue }
-            let id = key(screen)
-            if !isOurs(current) {
-                guard saved[id] == nil else { continue }  // a different Space, or you changed it
-                saved[id] = current.absoluteString
-                savedOptions[id] = workspace.desktopImageOptions(for: screen)
-            }
-            guard let still = still(of: palette, size: screen.frame.size) else { continue }
+            guard let still = still(of: palette, size: screen.frame.size),
+                  workspace.desktopImageURL(for: screen)?.standardizedFileURL != still.standardizedFileURL else { continue }
             try? workspace.setDesktopImageURL(still, for: screen, options: fill)
         }
-        UserDefaults.standard.set(saved, forKey: savedKey)
     }
-
-    static func restore() {
-        guard let saved = UserDefaults.standard.dictionary(forKey: savedKey) as? [String: String] else { return }
-        for screen in NSScreen.screens {
-            let id = key(screen)
-            guard let original = saved[id].flatMap(URL.init(string:)),
-                  let current = NSWorkspace.shared.desktopImageURL(for: screen), isOurs(current) else { continue }
-            try? NSWorkspace.shared.setDesktopImageURL(original, for: screen, options: savedOptions[id] ?? fill)
-        }
-        UserDefaults.standard.removeObject(forKey: savedKey)
-        savedOptions = [:]
-    }
-
-    private static func key(_ screen: NSScreen) -> String {
-        "\(screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] ?? screen.localizedName)"
-    }
-
-    private static func isOurs(_ url: URL) -> Bool { url.standardizedFileURL.path.hasPrefix(folder.path) }
 
     private static func still(of palette: Palette, size: CGSize) -> URL? {
         let url = folder.appendingPathComponent("\(palette.id)-\(Int(size.width))x\(Int(size.height)).png")
